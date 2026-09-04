@@ -16,7 +16,6 @@ dependency that could parse a book format. The phone reads only .book files.
 from __future__ import annotations
 
 import argparse
-import base64
 import html
 import json
 import os
@@ -44,13 +43,6 @@ BOLD_TAGS = {"strong", "b"}
 SKIP_TAGS = {"script", "style", "head", "title", "svg", "figcaption"}
 
 HEADINGS = {H1, H2, H3}
-
-
-# A cover is carried inside the .book file, so a book stays one file. It is
-# read back by scanning only the front of that file, which is why it has to
-# stay small and be written before the chapters.
-COVER_MAX_BYTES = 200_000
-COVER_WIDTH = 400
 
 
 class ConversionError(Exception):
@@ -234,38 +226,6 @@ def _epub_toc_titles(zf: zipfile.ZipFile, names: list[str]) -> dict[str, str]:
     return titles
 
 
-def epub_cover(zf: zipfile.ZipFile, opf, opf_dir: str) -> bytes | None:
-    """The cover image an EPUB declares, if it declares one.
-
-    Two spellings, because EPUB changed its mind: EPUB 3 marks the manifest
-    item `properties="cover-image"`, EPUB 2 points at it from a <meta
-    name="cover"> by id. Plenty of books do both, and some do neither.
-    """
-    wanted_id = None
-    href = None
-    for node in opf.iter():
-        local = _local(node.tag)
-        if local == "item" and "cover-image" in (node.get("properties") or ""):
-            href = node.get("href")
-            break
-        if local == "meta" and (node.get("name") or "").lower() == "cover":
-            wanted_id = node.get("content")
-
-    if href is None and wanted_id:
-        for node in opf.iter():
-            if _local(node.tag) == "item" and node.get("id") == wanted_id:
-                href = node.get("href")
-                break
-    if not href:
-        return None
-
-    target = os.path.normpath(os.path.join(opf_dir, href)).replace("\\", "/")
-    try:
-        return zf.read(target)
-    except KeyError:
-        return None
-
-
 def from_epub(path: Path) -> dict:
     try:
         archive = zipfile.ZipFile(path)
@@ -313,7 +273,6 @@ def from_epub(path: Path) -> dict:
                     spine.append(target.replace("\\", "/"))
 
         toc = _epub_toc_titles(zf, names)
-        cover = epub_cover(zf, opf, opf_dir)
 
         chapters = []
         for target in spine:
@@ -326,7 +285,7 @@ def from_epub(path: Path) -> dict:
                 continue    # cover pages and the like carry no text
             chapters.extend(split_at_headings(blocks, toc.get(target)))
 
-    return _book(title or path.stem, author, "epub", chapters, cover)
+    return _book(title or path.stem, author, "epub", chapters)
 
 
 def heading_title(text: str) -> str:
@@ -577,7 +536,6 @@ def from_pdf(path: Path) -> dict:
 
     # Read every page first, so the headers can be found before anything is
     # kept - they can only be recognised by comparing pages to each other.
-    cover = _pdf_cover(pymupdf, doc)
     pages = [(doc[n].rect.height, _page_blocks(doc[n])) for n in range(doc.page_count)]
     furniture = running_text(pages)
 
@@ -607,34 +565,7 @@ def from_pdf(path: Path) -> dict:
 
     if blocks:
         chapters.append({"title": chapter_title, "blocks": blocks})
-    return _book(title, author, "pdf", chapters, cover)
-
-
-def _pdf_cover(pymupdf, doc) -> bytes | None:
-    """The first page, drawn small - which for most books is the cover.
-
-    JPEG where the build supports it, PNG otherwise: a page render as PNG can
-    run to hundreds of kilobytes, and the whole thing has to fit inside the
-    front of the .book file.
-    """
-    if doc.page_count == 0:
-        return None
-    try:
-        page = doc[0]
-        scale = COVER_WIDTH / max(page.rect.width, 1)
-        pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale))
-        for encoding in ("jpeg", "png"):
-            try:
-                return pixmap.tobytes(encoding)
-            except (ValueError, RuntimeError):
-                continue
-    except Exception as error:                          # noqa: BLE001
-        # A cover is decoration. Never let one stop a book converting - but
-        # say so, because a silently missing cover looks like a broken tool.
-        print(f"  no cover: {type(error).__name__}: {error}")
-        return None
-    print("  no cover: the page would not encode as an image")
-    return None
+    return _book(title, author, "pdf", chapters)
 
 
 def _mend_wrapping(text: str) -> str:
@@ -765,23 +696,13 @@ def _part(chapter: dict, blocks: list[dict], first: bool) -> dict:
     return {"title": None, "continues": True, "blocks": blocks}
 
 
-def _book(title, author, source: str, chapters: list[dict],
-          cover: bytes | None = None) -> dict:
-    book = {
+def _book(title, author, source: str, chapters: list[dict]) -> dict:
+    return {
         "title": " ".join(str(title).split()) or "Untitled",
         "author": " ".join(author.split()) if author else None,
         "source": source,
+        "chapters": cap_chapters(strip_gutenberg([c for c in chapters if c["blocks"]])),
     }
-    # Before the chapters on purpose: the phone finds it by reading the front
-    # of the file rather than parsing a novel to show a thumbnail.
-    if cover:
-        if len(cover) <= COVER_MAX_BYTES:
-            book["cover"] = base64.b64encode(cover).decode("ascii")
-        else:
-            print(f"  cover skipped: {len(cover) // 1024} KB, over the "
-                  f"{COVER_MAX_BYTES // 1024} KB limit")
-    book["chapters"] = cap_chapters(strip_gutenberg([c for c in chapters if c["blocks"]]))
-    return book
 
 
 READERS = {
@@ -829,10 +750,9 @@ def convert(path: Path, out_dir: Path) -> Path:
     )
 
     chars = sum(len(b["s"]) for c in book["chapters"] for b in c["blocks"])
-    cover = "with cover" if book.get("cover") else "no cover"
     print(
         f"{destination.name}  -  {len(book['chapters'])} chapters, "
-        f"{chars:,} characters, {destination.stat().st_size / 1024:.0f} KB, {cover}"
+        f"{chars:,} characters, {destination.stat().st_size / 1024:.0f} KB"
     )
     return destination
 

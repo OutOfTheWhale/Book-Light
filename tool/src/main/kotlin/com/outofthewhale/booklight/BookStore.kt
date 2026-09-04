@@ -1,6 +1,5 @@
 package com.outofthewhale.booklight
 
-import android.util.Base64
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -10,8 +9,6 @@ data class BookEntry(
     val id: String,
     val title: String,
     val author: String? = null,
-    /** The cached cover image, or null for a book that has none. */
-    val cover: File? = null,
 )
 
 /**
@@ -20,7 +17,7 @@ data class BookEntry(
  * One `.book` file per book, in one directory. Copy a file in, it appears;
  * delete it, it is gone. There is nothing else to keep in step.
  */
-class BookStore(private val booksDir: File, private val coversDir: File? = null) {
+class BookStore(private val booksDir: File) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -52,33 +49,7 @@ class BookStore(private val booksDir: File, private val coversDir: File? = null)
             id = file.name,
             title = jsonString(head, "title") ?: file.nameWithoutExtension,
             author = jsonString(head, "author"),
-            cover = cachedCover(file),
         )
-    }
-
-    /**
-     * The book's cover, decoded once and kept as an image file.
-     *
-     * The cover lives inside the .book, so finding it means reading the front
-     * of the file - cheap once, wasteful on every listing. An empty cache file
-     * records "this book has no cover", so a coverless book is not re-scanned
-     * every time the library opens.
-     */
-    private fun cachedCover(file: File): File? {
-        val covers = coversDir ?: return null
-        val cache = File(covers, file.name + ".img")
-        if (cache.isFile) return cache.takeIf { it.length() > 0 }
-
-        covers.mkdirs()
-        val encoded = jsonString(readHead(file, COVER_HEAD_BYTES), "cover")
-        if (encoded == null) {
-            runCatching { cache.writeBytes(ByteArray(0)) }
-            return null
-        }
-        return runCatching {
-            cache.writeBytes(Base64.decode(encoded, Base64.DEFAULT))
-            cache
-        }.getOrNull()
     }
 
     private fun readHead(file: File, bytes: Int): String = runCatching {
@@ -97,8 +68,6 @@ class BookStore(private val booksDir: File, private val coversDir: File? = null)
     companion object {
         const val EXTENSION = ".book"
         private const val HEAD_BYTES = 4096
-        /** Enough to hold a cover of the size the converter allows. */
-        private const val COVER_HEAD_BYTES = 512 * 1024
 
         /**
          * Pull one string value out of the front of a JSON document.

@@ -37,10 +37,3 @@ fun drainInbox(inboxNames: List<String>, read: (String) -> ByteArray?, booksDir:
     return taken
 }
 
-/**
- * Where decoded covers are kept.
- *
- * A cache, not a store: every one of these can be rebuilt from the .book file
- * it came out of, so deleting the folder costs nothing but a moment.
- */
-fun coversDir(filesDir: File): File = File(filesDir, "covers").also { it.mkdirs() }

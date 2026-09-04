@@ -66,7 +66,7 @@ work well and are what this was tested against.
   there is nothing to press.
 
 The library lists whatever was read most recently first, with how far through
-each book you are, and the cover where the book came with one.
+each book you are.
 
 ## Building it
 
