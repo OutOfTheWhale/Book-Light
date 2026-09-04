@@ -8,5 +8,6 @@ versionName = "0.1.0"
 # needs no network at all.
 permissions = ["android.permission.INTERNET", "android.permission.CAMERA"]
 capabilities = []
-# Switch to "com.lightos" to run on real Light Phone III hardware.
-serverPackage = "com.thelightphone.sdk.emulator"
+# Targeting real Light Phone III hardware. Switch back to
+# "com.thelightphone.sdk.emulator" to run in the LightOS emulator.
+serverPackage = "com.lightos"
