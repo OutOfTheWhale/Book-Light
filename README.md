@@ -1,10 +1,16 @@
 # Book Light
 
 A plain e-reader for the [Light Phone](https://www.thelightphone.com/). One page
-at a time, centred, with the clock above and two chevrons below. It remembers
-where you stopped in every book.
+at a time, centred, with the book and chapter above and two chevrons below. It
+remembers where you stopped in every book.
 
 Built on the [Light SDK](https://github.com/lightphone/light-sdk).
+
+<p align="center">
+  <img src="docs/screenshots/reading.png" width="30%" alt="A page of Moby Dick">
+  <img src="docs/screenshots/library.png" width="30%" alt="The library">
+  <img src="docs/screenshots/contents.png" width="30%" alt="The contents of a book">
+</p>
 
 ## How it works
 
@@ -40,9 +46,19 @@ python tools/convert.py "Moby Dick.epub"           # convert
 python tools/convert.py "Moby Dick.epub" --push    # convert and send
 ```
 
-Sending needs `adb` on PATH and USB debugging on. If that is not convenient,
-copy the `.book` file across however you normally move files to the phone — the
-reader takes in whatever it finds in its own folder, so any route works.
+Sending needs `adb` on PATH and USB debugging on.
+
+### There is no folder on the phone to drop books into
+
+Books live in the tool's own private directory, and a Light SDK tool cannot be
+given permission to look anywhere else: the SDK's allowed-permission list has
+no storage permission in it at all, and `Context` and the content resolver are
+both out of reach. So a book downloaded on the phone — from a cloud drive, a
+browser, anywhere — cannot be picked up, whatever folder it lands in.
+
+USB is the route that works today. The tool also watches a `shared/inbox`
+folder that LightOS itself can write into, which is how a transfer from the
+phone side would arrive if LightOS offers one, but that is untested.
 
 ### What it can convert
 
