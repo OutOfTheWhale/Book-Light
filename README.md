@@ -85,10 +85,9 @@ whatever the page turns out to be, including on a different phone.
 ## Light Phone 2
 
 Not built yet. The plan is a second, ordinary Android app that shares this
-project's core and draws its own screens for the smaller e-ink display, the same
-way [Word of Light](https://github.com/lightphone/light-sdk) does it. Everything
-below the screen layer — the book format, pagination, saved progress — is
-already free of the SDK and ready to be shared.
+project's core and draws its own screens for the smaller e-ink display.
+Everything below the screen layer — the book format, pagination, saved progress
+— is already free of the SDK and ready to be shared.
 
 ## Licence
 
