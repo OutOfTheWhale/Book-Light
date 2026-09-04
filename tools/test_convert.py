@@ -14,6 +14,7 @@ from convert import (  # noqa: E402
     heading_title,
     html_to_blocks,
     split_at_headings,
+    strip_gutenberg,
 )
 
 
@@ -203,6 +204,45 @@ def test_no_text_is_lost_when_a_chapter_is_split():
     blocks = [_p("a" * 40), _p("b" * 40), _p("c" * 40), _p("d" * 40)]
     out = cap_chapters([{"title": None, "blocks": blocks}], limit=100)
     assert [b["s"] for c in out for b in c["blocks"]] == [b["s"] for b in blocks]
+
+
+# -- Gutenberg wrapping -----------------------------------------------------
+
+def test_the_licence_before_and_after_the_book_is_dropped():
+    chapters = [
+        {"title": "eBook of Moby Dick", "blocks": [_p("*** START OF THE PROJECT GUTENBERG EBOOK ***")]},
+        {"title": "CHAPTER 1.", "blocks": [_p("Call me Ishmael.")]},
+        {"title": None, "blocks": [_p("*** END OF THE PROJECT GUTENBERG EBOOK ***"), _p("Licence.")]},
+    ]
+    out = strip_gutenberg(chapters)
+    assert [c["title"] for c in out] == ["CHAPTER 1."]
+
+
+def test_a_book_that_is_not_from_gutenberg_is_untouched():
+    # The markers are exact, so this never guesses at someone else's front matter.
+    chapters = [{"title": "One", "blocks": [_p("Call me Ishmael.")]}]
+    assert strip_gutenberg(chapters) is chapters
+
+
+def test_the_marker_blocks_themselves_go_too():
+    chapters = [{
+        "title": None,
+        "blocks": [
+            _p("*** START OF THE PROJECT GUTENBERG EBOOK MOBY DICK ***"),
+            _p("Call me Ishmael."),
+            _p("*** END OF THE PROJECT GUTENBERG EBOOK MOBY DICK ***"),
+        ],
+    }]
+    out = strip_gutenberg(chapters)
+    assert [b["s"] for c in out for b in c["blocks"]] == ["Call me Ishmael."]
+
+
+def test_a_start_marker_with_no_end_still_drops_the_header():
+    chapters = [
+        {"title": None, "blocks": [_p("*** START OF THE PROJECT GUTENBERG EBOOK ***")]},
+        {"title": "One", "blocks": [_p("Call me Ishmael.")]},
+    ]
+    assert [c["title"] for c in strip_gutenberg(chapters)] == ["One"]
 
 
 # Runs under pytest, and under plain `python test_convert.py` for anyone who

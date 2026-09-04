@@ -505,6 +505,52 @@ def via_calibre(path: Path) -> dict:
 
 # --------------------------------------------------------------------------
 
+# Project Gutenberg wraps every book in a licence and a header. They are marked
+# unmistakably, which is what makes dropping them safe to do automatically.
+GUTENBERG_START = re.compile(r"\*\*\*\s*START OF (?:THE|THIS) PROJECT GUTENBERG", re.I)
+GUTENBERG_END = re.compile(r"\*\*\*\s*END OF (?:THE|THIS) PROJECT GUTENBERG", re.I)
+
+
+def strip_gutenberg(chapters: list[dict]) -> list[dict]:
+    """Drop Gutenberg's front and back matter, keeping the book between them.
+
+    Without this, opening Moby Dick lands on "The Project Gutenberg eBook of
+    Moby Dick" followed by pages of licence, and the contents lists the licence
+    as a chapter.
+
+    The markers are exact strings Gutenberg puts in every book, so a book that
+    has neither is left completely alone - this never guesses.
+    """
+    flat = [
+        (chapter_index, block_index)
+        for chapter_index, chapter in enumerate(chapters)
+        for block_index in range(len(chapter["blocks"]))
+    ]
+
+    start = end = None
+    for position, (chapter_index, block_index) in enumerate(flat):
+        text = chapters[chapter_index]["blocks"][block_index]["s"]
+        if start is None and GUTENBERG_START.search(text):
+            start = position
+        elif start is not None and GUTENBERG_END.search(text):
+            end = position
+            break
+
+    if start is None and end is None:
+        return chapters
+
+    keep = set(flat[(start + 1 if start is not None else 0):(end if end is not None else len(flat))])
+    out = []
+    for chapter_index, chapter in enumerate(chapters):
+        blocks = [
+            block for block_index, block in enumerate(chapter["blocks"])
+            if (chapter_index, block_index) in keep
+        ]
+        if blocks:
+            out.append({"title": chapter["title"], "blocks": blocks})
+    return out
+
+
 # The reader lays out a whole chapter to work out where its pages fall, so a
 # chapter has to stay small enough to measure quickly.
 CHAPTER_LIMIT = 20_000
@@ -532,13 +578,26 @@ def cap_chapters(chapters: list[dict], limit: int = CHAPTER_LIMIT) -> list[dict]
         first = True
         for block in blocks:
             if part and size + len(block["s"]) > limit:
-                out.append({"title": chapter["title"] if first else None, "blocks": part})
+                out.append(_part(chapter, part, first))
                 part, size, first = [], 0, False
             part.append(block)
             size += len(block["s"])
         if part:
-            out.append({"title": chapter["title"] if first else None, "blocks": part})
+            out.append(_part(chapter, part, first))
     return out
+
+
+def _part(chapter: dict, blocks: list[dict], first: bool) -> dict:
+    """One piece of a split chapter.
+
+    A continuation is flagged rather than just left unnamed, because the two
+    mean different things to the contents: a chapter the book never named still
+    deserves a line, but a continuation is the same chapter and must not appear
+    again.
+    """
+    if first:
+        return {"title": chapter["title"], "blocks": blocks}
+    return {"title": None, "continues": True, "blocks": blocks}
 
 
 def _book(title, author, source: str, chapters: list[dict]) -> dict:
@@ -546,7 +605,7 @@ def _book(title, author, source: str, chapters: list[dict]) -> dict:
         "title": " ".join(str(title).split()) or "Untitled",
         "author": " ".join(author.split()) if author else None,
         "source": source,
-        "chapters": cap_chapters([c for c in chapters if c["blocks"]]),
+        "chapters": cap_chapters(strip_gutenberg([c for c in chapters if c["blocks"]])),
     }
 
 

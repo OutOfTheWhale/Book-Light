@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -21,6 +21,21 @@ import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.lightClickable
 
+/** A chapter the contents will list, and where jumping to it lands. */
+data class ContentsEntry(val chapter: Int, val title: String?)
+
+/**
+ * Everything a book's contents should list.
+ *
+ * Chapters split only so the phone could lay them out are left out: they are
+ * the same chapter, and listing them put a bare "2" and "6" between the real
+ * entries. Reading runs into them on its own at a page turn.
+ */
+fun Book.contents(): List<ContentsEntry> =
+    chapters.mapIndexedNotNull { index, chapter ->
+        if (chapter.continues) null else ContentsEntry(index, chapter.title)
+    }
+
 /**
  * The contents, reached by tapping the middle of a page.
  *
@@ -28,7 +43,7 @@ import com.thelightphone.sdk.ui.lightClickable
  */
 class ContentsScreen(
     sealedActivity: SealedLightActivity,
-    private val titles: List<String?>,
+    private val entries: List<ContentsEntry>,
 ) : SimpleLightScreen<Int>(sealedActivity) {
 
     @Composable
@@ -49,16 +64,16 @@ class ContentsScreen(
                     modifier = Modifier.padding(bottom = 20.dp),
                 )
                 LazyColumn {
-                    itemsIndexed(titles) { index, title ->
+                    items(entries, key = { it.chapter }) { entry ->
                         LightText(
-                            // A chapter the book never named still needs to be
+                            // A chapter the book never named still has to be
                             // reachable, so it is listed by its number.
-                            text = title ?: "${index + 1}",
+                            text = entry.title ?: "${entry.chapter + 1}",
                             variant = LightTextVariant.Copy,
-                            lighten = title == null,
+                            lighten = entry.title == null,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .lightClickable { goBack(index) }
+                                .lightClickable { goBack(entry.chapter) }
                                 .padding(vertical = 12.dp),
                         )
                     }

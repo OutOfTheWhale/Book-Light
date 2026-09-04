@@ -12,6 +12,7 @@ drop them in Book Light's folder - the reader takes in anything it finds.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,12 @@ LP2_BOOKS = f"/sdcard/Android/data/{LP2_PACKAGE}/files/books"
 STAGING = "/data/local/tmp"
 
 
+# Set once a phone has been chosen, and passed to every later call. Without it
+# adb refuses to act whenever anything else is attached - an emulator left
+# running is enough - and the refusal looks like the app not being installed.
+_serial: str | None = None
+
+
 def adb(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     tool = shutil.which("adb")
     if not tool:
@@ -37,19 +44,50 @@ def adb(*args: str, check: bool = True) -> subprocess.CompletedProcess:
             "It comes with the Android platform-tools:\n"
             "    https://developer.android.com/tools/releases/platform-tools"
         )
-    result = subprocess.run([tool, *args], capture_output=True, text=True)
+    target = ["-s", _serial] if _serial else []
+    result = subprocess.run([tool, *target, *args], capture_output=True, text=True)
     if check and result.returncode != 0:
         sys.exit(f"adb {' '.join(args)} failed:\n{result.stderr.strip()}")
     return result
 
 
 def one_device() -> None:
+    global _serial
     lines = adb("devices").stdout.strip().splitlines()[1:]
-    devices = [line.split()[0] for line in lines if line.strip().endswith("device")]
+    # Only "device" counts. A line ending "offline" or "unauthorized" is
+    # something adb can see but cannot talk to.
+    devices = [
+        line.split()[0] for line in lines
+        if len(line.split()) == 2 and line.split()[1] == "device"
+    ]
     if not devices:
         sys.exit("No phone found. Plug it in and turn on USB debugging.")
+
+    chosen = os.environ.get("ANDROID_SERIAL")
+    if chosen:
+        if chosen not in devices:
+            sys.exit(f"ANDROID_SERIAL is {chosen}, which is not connected.")
+        _serial = chosen
+        return
+
     if len(devices) > 1:
-        sys.exit(f"More than one device is connected: {', '.join(devices)}")
+        sys.exit(
+            "More than one device is connected:\n  "
+            + "\n  ".join(devices)
+            + "\nDisconnect the others, or set ANDROID_SERIAL to the one you want."
+        )
+    _serial = devices[0]
+
+
+def sh(path: str) -> str:
+    """Quote a path for the shell on the phone.
+
+    `adb shell` joins its arguments and hands them to the device's sh, so a
+    book called "Moby Dick; Or, The Whale.book" is otherwise read as a command
+    with a semicolon in it. `adb push` takes its remote path literally and
+    needs no quoting.
+    """
+    return "'" + path.replace("'", """'"'"'""") + "'"
 
 
 def installed(package: str) -> bool:
@@ -65,7 +103,7 @@ def push_lp3(files: list[Path]) -> None:
     debuggable build - on a release build this fails, and the message says so
     rather than leaving the reader wondering where the book went.
     """
-    adb("shell", "run-as", PACKAGE, "mkdir", "-p", LP3_BOOKS, check=False)
+    adb("shell", "run-as", PACKAGE, "mkdir", "-p", sh(LP3_BOOKS), check=False)
     probe = adb("shell", "run-as", PACKAGE, "ls", check=False)
     if probe.returncode != 0:
         sys.exit(
@@ -79,8 +117,8 @@ def push_lp3(files: list[Path]) -> None:
     for path in files:
         staged = f"{STAGING}/{path.name}"
         adb("push", str(path), staged)
-        adb("shell", "run-as", PACKAGE, "cp", staged, f"{LP3_BOOKS}/{path.name}")
-        adb("shell", "rm", "-f", staged, check=False)
+        adb("shell", "run-as", PACKAGE, "cp", sh(staged), sh(f"{LP3_BOOKS}/{path.name}"))
+        adb("shell", "rm", "-f", sh(staged), check=False)
         print(f"{path.name}  ->  {PACKAGE}")
 
 

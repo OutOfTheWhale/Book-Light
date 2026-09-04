@@ -230,7 +230,9 @@ class ReaderScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(horizontal = SIDE_MARGIN),
+                    // Bottom room so the last line of a page does not sit on
+                    // top of the chevrons.
+                    .padding(horizontal = SIDE_MARGIN, vertical = 8.dp),
             ) {
                 val widthPx = constraints.maxWidth
                 val heightPx = constraints.maxHeight.toFloat()
@@ -307,14 +309,17 @@ class ReaderScreen(
     private fun openContents(book: Book) {
         // The callback runs only when a chapter was actually chosen - backing
         // out of the contents delivers no result at all.
-        navigateTo({ sealed -> ContentsScreen(sealed, book.chapters.map { it.title }) }) { chosen ->
+        navigateTo({ sealed -> ContentsScreen(sealed, book.contents()) }) { chosen ->
             viewModel.jumpTo(chosen)
         }
     }
 
     private companion object {
-        val BODY_SIZE = 30.sp
-        val BODY_LINE_HEIGHT = 48.sp
+        // Smaller than the SDK's own paragraph style, which at 30sp put six
+        // words on a line and six lines on the screen. The reading screen this
+        // copies fits about a dozen lines, and that ratio is most of the look.
+        val BODY_SIZE = 20.sp
+        val BODY_LINE_HEIGHT = 32.sp
         val SIDE_MARGIN = 34.dp
     }
 }

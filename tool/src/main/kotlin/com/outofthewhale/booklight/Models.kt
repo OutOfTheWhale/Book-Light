@@ -35,6 +35,11 @@ data class Book(
 @Serializable
 data class Chapter(
     val title: String? = null,
+    /**
+     * True when this is the rest of the chapter above, split only so the phone
+     * can lay it out. The contents leaves these out - they are not chapters.
+     */
+    val continues: Boolean = false,
     val blocks: List<Block> = emptyList(),
 ) {
     /**
