@@ -45,6 +45,14 @@ SKIP_TAGS = {"script", "style", "head", "title", "svg", "figcaption"}
 HEADINGS = {H1, H2, H3}
 
 
+class ConversionError(Exception):
+    """A book that cannot be converted, with a message worth showing.
+
+    Raised rather than exited, so the window can report it and carry on with
+    the next book. Only main() turns one into an exit code.
+    """
+
+
 # --------------------------------------------------------------------------
 # HTML -> blocks
 # --------------------------------------------------------------------------
@@ -219,12 +227,27 @@ def _epub_toc_titles(zf: zipfile.ZipFile, names: list[str]) -> dict[str, str]:
 
 
 def from_epub(path: Path) -> dict:
-    with zipfile.ZipFile(path) as zf:
+    try:
+        archive = zipfile.ZipFile(path)
+    except zipfile.BadZipFile:
+        raise ConversionError(
+            f"{path.name} is not a readable EPUB - it is not a zip archive at all.\n"
+            "A book bought from a shop is usually DRM-protected, and no converter "
+            "can open it."
+        ) from None
+
+    with archive as zf:
         names = zf.namelist()
 
-        container = ElementTree.fromstring(zf.read("META-INF/container.xml"))
-        rootfile = _find(container, "rootfile")
-        opf_path = rootfile.get("full-path")
+        try:
+            container = ElementTree.fromstring(zf.read("META-INF/container.xml"))
+            rootfile = _find(container, "rootfile")
+            opf_path = rootfile.get("full-path")
+        except (KeyError, AttributeError, ElementTree.ParseError):
+            raise ConversionError(
+                f"{path.name} is a zip file but not an EPUB - it has no readable "
+                "table of contents."
+            ) from None
         opf_dir = os.path.dirname(opf_path)
 
         opf = ElementTree.fromstring(zf.read(opf_path))
@@ -435,7 +458,7 @@ def from_pdf(path: Path) -> dict:
     try:
         import fitz  # PyMuPDF
     except ImportError:
-        sys.exit("PDF conversion needs PyMuPDF.\n    pip install pymupdf")
+        raise ConversionError("PDF conversion needs PyMuPDF.\n    pip install pymupdf")
 
     doc = fitz.open(path)
     metadata = doc.metadata or {}
@@ -486,7 +509,7 @@ def _pdf_paragraphs(text: str) -> list[str]:
 def via_calibre(path: Path) -> dict:
     tool = shutil.which("ebook-convert")
     if not tool:
-        sys.exit(
+        raise ConversionError(
             f"{path.suffix} needs Calibre's ebook-convert on PATH.\n"
             "    https://calibre-ebook.com/download\n"
             "Or convert it to EPUB yourself first.\n"
@@ -497,7 +520,7 @@ def via_calibre(path: Path) -> dict:
         result = subprocess.run([tool, str(path), str(epub)],
                                 capture_output=True, text=True)
         if result.returncode != 0 or not epub.exists():
-            sys.exit(f"ebook-convert could not read {path.name}:\n{result.stderr.strip()}")
+            raise ConversionError(f"ebook-convert could not read {path.name}:\n{result.stderr.strip()}")
         book = from_epub(epub)
     book["source"] = path.suffix.lstrip(".").lower()
     return book
@@ -638,13 +661,13 @@ def safe_filename(title: str) -> str:
 def convert(path: Path, out_dir: Path) -> Path:
     reader = READERS.get(path.suffix.lower())
     if not reader:
-        sys.exit(
+        raise ConversionError(
             f"Do not know how to read {path.suffix or path.name}.\n"
             f"Handled: {', '.join(sorted(READERS))}"
         )
     book = reader(path)
     if not book["chapters"]:
-        sys.exit(f"{path.name} produced no text. A scanned PDF needs OCR first.")
+        raise ConversionError(f"{path.name} produced no text. A scanned PDF needs OCR first.")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     destination = out_dir / (safe_filename(book["title"]) + ".book")
@@ -680,7 +703,10 @@ def main() -> None:
         if not path.is_file():
             sys.exit(f"No such file: {path}")
 
-    written = [convert(path, args.out) for path in args.files]
+    try:
+        written = [convert(path, args.out) for path in args.files]
+    except ConversionError as error:
+        sys.exit(str(error))
 
     if args.push:
         from push import push

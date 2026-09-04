@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,6 +31,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,11 +45,8 @@ import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
 
 /**
  * Which chapter and page are showing, and where the reader left off.
@@ -135,9 +132,9 @@ class ReaderViewModel(
 /**
  * The reading screen.
  *
- * One page at a time, centred, the clock above and two chevrons below. Turning
- * a page is a tap on the left or right third of the screen, a chevron, or a
- * volume key; a tap in the middle opens the contents.
+ * One page at a time, centred, the book and chapter above and two chevrons
+ * below. Turning a page is a tap on the left or right third of the screen, a
+ * chevron, or a volume key; a tap in the middle opens the contents.
  *
  * Pages are worked out by measuring the whole chapter and cutting it into
  * screenfuls. Nothing durable depends on that measurement: what gets saved is a
@@ -220,10 +217,12 @@ class ReaderScreen(
         val measurer = rememberTextMeasurer()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            Clock(
+            Header(
+                title = book.title,
+                chapter = book.chapterLabel(chapterIndex),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 18.dp, bottom = 12.dp)
+                    .padding(top = 18.dp, bottom = 12.dp, start = SIDE_MARGIN, end = SIDE_MARGIN),
             )
 
             BoxWithConstraints(
@@ -324,25 +323,40 @@ class ReaderScreen(
     }
 }
 
+/**
+ * What is being read, above the page.
+ *
+ * Both lines are dim and small, so the eye passes over them on the way to the
+ * text. The chapter line is left out entirely when the book never named one,
+ * rather than standing there empty.
+ */
 @Composable
-private fun Clock(modifier: Modifier = Modifier) {
-    var now by remember { mutableStateOf(LocalTime.now()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(20_000)
-            now = LocalTime.now()
-        }
-    }
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+private fun Header(title: String, chapter: String?, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         LightText(
-            text = now.format(CLOCK_FORMAT),
+            text = title,
             variant = LightTextVariant.Detail,
             lighten = true,
+            align = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
+        if (!chapter.isNullOrBlank()) {
+            LightText(
+                text = chapter,
+                variant = LightTextVariant.Detail,
+                lighten = true,
+                align = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
     }
 }
-
-private val CLOCK_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 @Composable
 private fun Chevrons(colour: Color, onBack: () -> Unit, onForward: () -> Unit) {

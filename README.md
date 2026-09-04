@@ -22,19 +22,25 @@ cannot read on a small screen.
 
 ## Getting a book onto the phone
 
-Convert it:
+Open the window:
 
 ```bash
-python tools/convert.py "Moby Dick.epub"
+python tools/app.py
 ```
 
-Then plug the phone in and push it:
+Add some books, choose where the converted files should go, press Convert. Tick
+"Also send to a plugged-in phone" and they go straight onto it. Tkinter comes
+with Python, so this needs nothing installed. On Windows, `pythonw tools/app.py`
+opens it without a console behind it.
+
+Or from the command line:
 
 ```bash
-python tools/convert.py "Moby Dick.epub" --push
+python tools/convert.py "Moby Dick.epub"           # convert
+python tools/convert.py "Moby Dick.epub" --push    # convert and send
 ```
 
-`--push` needs `adb` on PATH and USB debugging on. If that is not convenient,
+Sending needs `adb` on PATH and USB debugging on. If that is not convenient,
 copy the `.book` file across however you normally move files to the phone — the
 reader takes in whatever it finds in its own folder, so any route works.
 

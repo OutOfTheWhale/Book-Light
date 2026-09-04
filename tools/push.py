@@ -30,6 +30,10 @@ LP2_BOOKS = f"/sdcard/Android/data/{LP2_PACKAGE}/files/books"
 STAGING = "/data/local/tmp"
 
 
+class PushError(Exception):
+    """A phone that cannot be written to, with a message worth showing."""
+
+
 # Set once a phone has been chosen, and passed to every later call. Without it
 # adb refuses to act whenever anything else is attached - an emulator left
 # running is enough - and the refusal looks like the app not being installed.
@@ -39,7 +43,7 @@ _serial: str | None = None
 def adb(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     tool = shutil.which("adb")
     if not tool:
-        sys.exit(
+        raise PushError(
             "adb is not on PATH.\n"
             "It comes with the Android platform-tools:\n"
             "    https://developer.android.com/tools/releases/platform-tools"
@@ -47,7 +51,7 @@ def adb(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     target = ["-s", _serial] if _serial else []
     result = subprocess.run([tool, *target, *args], capture_output=True, text=True)
     if check and result.returncode != 0:
-        sys.exit(f"adb {' '.join(args)} failed:\n{result.stderr.strip()}")
+        raise PushError(f"adb {' '.join(args)} failed:\n{result.stderr.strip()}")
     return result
 
 
@@ -61,17 +65,17 @@ def one_device() -> None:
         if len(line.split()) == 2 and line.split()[1] == "device"
     ]
     if not devices:
-        sys.exit("No phone found. Plug it in and turn on USB debugging.")
+        raise PushError("No phone found. Plug it in and turn on USB debugging.")
 
     chosen = os.environ.get("ANDROID_SERIAL")
     if chosen:
         if chosen not in devices:
-            sys.exit(f"ANDROID_SERIAL is {chosen}, which is not connected.")
+            raise PushError(f"ANDROID_SERIAL is {chosen}, which is not connected.")
         _serial = chosen
         return
 
     if len(devices) > 1:
-        sys.exit(
+        raise PushError(
             "More than one device is connected:\n  "
             + "\n  ".join(devices)
             + "\nDisconnect the others, or set ANDROID_SERIAL to the one you want."
@@ -106,7 +110,7 @@ def push_lp3(files: list[Path]) -> None:
     adb("shell", "run-as", PACKAGE, "mkdir", "-p", sh(LP3_BOOKS), check=False)
     probe = adb("shell", "run-as", PACKAGE, "ls", check=False)
     if probe.returncode != 0:
-        sys.exit(
+        raise PushError(
             f"This build of {PACKAGE} will not accept files over adb.\n"
             f"  {probe.stderr.strip() or probe.stdout.strip()}\n\n"
             "run-as needs a debuggable build. Install the debug APK\n"
@@ -138,7 +142,7 @@ def push(files: list[Path]) -> None:
     elif installed(LP2_PACKAGE):
         push_lp2(files)
     else:
-        sys.exit(
+        raise PushError(
             "Book Light is not installed on this phone.\n"
             f"Looked for {PACKAGE} and {LP2_PACKAGE}."
         )
@@ -152,7 +156,10 @@ def main() -> None:
     for path in args.files:
         if not path.is_file():
             sys.exit(f"No such file: {path}")
-    push(args.files)
+    try:
+        push(args.files)
+    except PushError as error:
+        sys.exit(str(error))
 
 
 if __name__ == "__main__":
