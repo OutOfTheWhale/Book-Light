@@ -45,6 +45,7 @@ import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
+import com.thelightphone.sdk.ui.lightClickable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
@@ -133,8 +134,8 @@ class ReaderViewModel(
  * The reading screen.
  *
  * One page at a time, centred, the book and chapter above and two chevrons
- * below. Turning a page is a tap on the left or right third of the screen, a
- * chevron, or a volume key; a tap in the middle opens the contents.
+ * below. A tap on the left third of the page goes back, anywhere else goes
+ * on; so do the chevrons and the volume keys. The header opens the contents.
  *
  * Pages are worked out by measuring the whole chapter and cutting it into
  * screenfuls. Nothing durable depends on that measurement: what gets saved is a
@@ -220,6 +221,7 @@ class ReaderScreen(
             Header(
                 title = book.title,
                 chapter = book.chapterLabel(chapterIndex),
+                onClick = { openContents(book) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 18.dp, bottom = 12.dp, start = SIDE_MARGIN, end = SIDE_MARGIN),
@@ -281,11 +283,10 @@ class ReaderScreen(
                         .fillMaxSize()
                         .pointerInput(pages, chapterIndex) {
                             detectTapGestures { offset ->
-                                when {
-                                    offset.x < size.width / 3f -> turn(-1)
-                                    offset.x > size.width * 2f / 3f -> turn(1)
-                                    else -> openContents(book)
-                                }
+                                // The page does nothing but turn. The contents
+                                // live behind the header, so a tap while
+                                // reading can never land somewhere unexpected.
+                                if (offset.x < size.width / 3f) turn(-1) else turn(1)
                             }
                         },
                 ) {
@@ -331,9 +332,14 @@ class ReaderScreen(
  * rather than standing there empty.
  */
 @Composable
-private fun Header(title: String, chapter: String?, modifier: Modifier = Modifier) {
+private fun Header(
+    title: String,
+    chapter: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
-        modifier = modifier,
+        modifier = modifier.lightClickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         LightText(

@@ -19,6 +19,11 @@ data class Book(
     val author: String? = null,
     /** What it was converted from - "epub", "pdf", "txt". Shown nowhere, kept for support. */
     val source: String? = null,
+    /**
+     * The cover, base64 JPEG or PNG, written before the chapters so the
+     * library can find it without parsing a whole novel.
+     */
+    val cover: String? = null,
     val chapters: List<Chapter> = emptyList(),
 ) {
     /** Characters in the whole book, for percent-through. */

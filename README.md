@@ -58,11 +58,15 @@ work well and are what this was tested against.
 
 ## Reading
 
-- **Tap left or right** to turn the page. So do the volume keys.
-- **Tap the middle** for the contents.
-- Every page turn is saved. Open the book again and it is where you left it.
+- **Tap the left third** of the page to go back, anywhere else to go on. So do
+  the chevrons and the volume keys.
+- **Tap the book and chapter at the top** for the contents. There is a back
+  button on it.
+- Every page turn is saved. Open the book again and it is where you left it —
+  there is nothing to press.
 
-The library lists whatever was read most recently first.
+The library lists whatever was read most recently first, with how far through
+each book you are, and the cover where the book came with one.
 
 ## Building it
 

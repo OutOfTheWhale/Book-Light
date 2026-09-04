@@ -26,7 +26,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 from convert import READERS, ConversionError, convert  # noqa: E402
 from push import PushError, push  # noqa: E402
 
-SETTINGS = Path.home() / ".booklight.json"
+# Kept beside the script rather than in the home folder, so everything this
+# tool writes stays on the same drive as the tool itself.
+HERE = Path(__file__).resolve().parent
+SETTINGS = HERE / ".booklight.json"
+DEFAULT_OUT = HERE.parent / "Books"
 
 OPEN_TYPES = [
     ("Books", " ".join(f"*{suffix}" for suffix in sorted(READERS))),
@@ -50,7 +54,7 @@ class App(ttk.Frame):
         self.working = False
 
         settings = self._load_settings()
-        self.out_dir = tk.StringVar(value=settings.get("out", str(Path.home() / "Books")))
+        self.out_dir = tk.StringVar(value=settings.get("out", str(DEFAULT_OUT)))
         self.send = tk.BooleanVar(value=settings.get("send", False))
 
         self._build()

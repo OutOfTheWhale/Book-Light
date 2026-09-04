@@ -1,16 +1,24 @@
 package com.outofthewhale.booklight
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.thelightphone.sdk.InitialScreen
@@ -107,7 +115,7 @@ class LibraryScreen(sealedActivity: SealedLightActivity) :
         val booksDir = booksDir(lightContext.filesDir)
         return LibraryViewModel(
             booksDir = booksDir,
-            bookStore = BookStore(booksDir),
+            bookStore = BookStore(booksDir, coversDir(lightContext.filesDir)),
             progressStore = ProgressStore(lightContext.dataStore),
             fileShare = lightContext.fileShare,
         )
@@ -154,26 +162,62 @@ class LibraryScreen(sealedActivity: SealedLightActivity) :
 
     @Composable
     private fun Row(shelved: Shelved, onClick: () -> Unit) {
-        Column(
+        androidx.compose.foundation.layout.Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
                 .lightClickable(onClick = onClick)
-                .padding(vertical = 14.dp)
+                .padding(vertical = 12.dp)
         ) {
-            LightText(text = shelved.entry.title, variant = LightTextVariant.Copy)
-            val detail = listOfNotNull(
-                shelved.entry.author,
-                shelved.fraction?.let { "${(it * 100).toInt()}%" },
-            ).joinToString("  ·  ")
-            if (detail.isNotEmpty()) {
-                LightText(
-                    text = detail,
-                    variant = LightTextVariant.Detail,
-                    lighten = true,
-                    modifier = Modifier.padding(top = 4.dp),
+            Cover(shelved.entry.cover)
+            Column {
+                LightText(text = shelved.entry.title, variant = LightTextVariant.Copy)
+                val detail = listOfNotNull(
+                    shelved.entry.author,
+                    shelved.fraction?.let { "${(it * 100).toInt()}%" },
+                ).joinToString("  ·  ")
+                if (detail.isNotEmpty()) {
+                    LightText(
+                        text = detail,
+                        variant = LightTextVariant.Detail,
+                        lighten = true,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * The cover, or a blank of the same size for a book without one.
+     *
+     * Keeping the space either way stops the titles jumping left and right
+     * down a list where only some books have art.
+     */
+    @Composable
+    private fun Cover(file: File?) {
+        val bitmap = remember(file?.path) {
+            file?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
+        }
+        Box(
+            modifier = Modifier
+                .padding(end = 16.dp)
+                .size(width = COVER_WIDTH, height = COVER_HEIGHT)
+        ) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
+    }
+
+    private companion object {
+        val COVER_WIDTH = 46.dp
+        val COVER_HEIGHT = 64.dp
     }
 
     private fun open(bookId: String) {
