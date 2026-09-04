@@ -5,6 +5,11 @@ import kotlin.test.assertEquals
 
 class ModelsTest {
 
+    private fun book(vararg lengths: Int) = Book(
+        title = "B",
+        chapters = lengths.map { n -> Chapter(blocks = listOf(Block(s = "x".repeat(n)))) },
+    )
+
     @Test
     fun `chapter length counts block strings and nothing between them`() {
         val chapter = Chapter(
@@ -18,36 +23,31 @@ class ModelsTest {
     }
 
     @Test
-    fun `a rule contributes nothing to the count`() {
-        val chapter = Chapter(blocks = listOf(Block(t = BlockType.RULE)))
-        assertEquals(0, chapter.charCount)
+    fun `a break contributes nothing to the count`() {
+        assertEquals(0, Chapter(blocks = listOf(Block(t = BlockType.RULE))).charCount)
     }
 
     @Test
     fun `charsBefore accumulates the chapters ahead of the index`() {
-        val book = BookManifest(
-            id = "b",
-            title = "B",
-            chapters = listOf(
-                ChapterInfo(file = "ch/0001.json", charCount = 100),
-                ChapterInfo(file = "ch/0002.json", charCount = 250),
-                ChapterInfo(file = "ch/0003.json", charCount = 40),
-            ),
-        )
-        assertEquals(0, book.charsBefore(0))
-        assertEquals(100, book.charsBefore(1))
-        assertEquals(350, book.charsBefore(2))
-        assertEquals(390, book.charCount)
+        val b = book(100, 250, 40)
+        assertEquals(0, b.charsBefore(0))
+        assertEquals(100, b.charsBefore(1))
+        assertEquals(350, b.charsBefore(2))
+        assertEquals(390, b.charCount)
     }
 
     @Test
     fun `charsBefore clamps rather than throwing on an out of range chapter`() {
-        val book = BookManifest(
-            id = "b",
-            title = "B",
-            chapters = listOf(ChapterInfo(file = "ch/0001.json", charCount = 10)),
-        )
-        assertEquals(0, book.charsBefore(-3))
-        assertEquals(10, book.charsBefore(9))
+        val b = book(10)
+        assertEquals(0, b.charsBefore(-3))
+        assertEquals(10, b.charsBefore(9))
+    }
+
+    @Test
+    fun `an empty book is zero characters, not a crash`() {
+        val b = Book(title = "Nothing")
+        assertEquals(0, b.charCount)
+        assertEquals(0, b.charsBefore(0))
+        assertEquals(0, b.charsBefore(5))
     }
 }
