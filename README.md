@@ -71,10 +71,20 @@ each book you are.
 ## Building it
 
 ```bash
-./gradlew :tool:assembleDebug
+./gradlew :tool:assembleDebug      # the one to install
+./gradlew :tool:assembleRelease    # smaller, but see below
 ```
 
-The APK lands in `tool/build/outputs/apk/debug/`. To run it in the LightOS
+The APKs land in `tool/build/outputs/apk/`. Both are signed with the SDK's
+development key.
+
+**Install the debug build.** `adb` cannot write into an app's private folder,
+so sending books over USB goes through `run-as`, and `run-as` only works on a
+debuggable build. On the release build `push.py` fails with *"package not
+debuggable"* and there is currently no other way to get a book onto the phone.
+The release build is a third of the size and is what a proper signed
+distribution would use, but until books can arrive by some other route it is
+the wrong one to install. To run it in the LightOS
 emulator, leave `serverPackage` in [`tool/lighttool.toml`](tool/lighttool.toml)
 alone; to run it on a Light Phone III, change it to `com.lightos`.
 
