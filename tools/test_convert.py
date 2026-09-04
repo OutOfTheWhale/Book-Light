@@ -10,9 +10,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from convert import (  # noqa: E402
+    PAGE_NUMBER,
+    _in_margin,
     cap_chapters,
     heading_title,
     html_to_blocks,
+    running_text,
     split_at_headings,
     strip_gutenberg,
 )
@@ -243,6 +246,65 @@ def test_a_start_marker_with_no_end_still_drops_the_header():
         {"title": "One", "blocks": [_p("Call me Ishmael.")]},
     ]
     assert [c["title"] for c in strip_gutenberg(chapters)] == ["One"]
+
+
+# -- PDF headers and footers ------------------------------------------------
+
+# Pages are (height, [(y0, y1, text), ...]). A page is 800 tall, so the top and
+# bottom margins are everything above 96 and below 704.
+
+def _page(*blocks):
+    return (800.0, list(blocks))
+
+
+def test_a_block_wholly_in_the_margin_is_a_margin_block():
+    assert _in_margin(20, 40, 800)          # top
+    assert _in_margin(760, 780, 800)        # bottom
+    assert not _in_margin(200, 400, 800)    # body
+
+
+def test_a_paragraph_starting_near_the_top_is_not_a_header():
+    # Testing where a block starts called the first paragraph on every page a
+    # header, and threw away the entire body of the first PDF this met.
+    assert not _in_margin(90, 500, 800)
+
+
+def test_a_repeated_header_is_found():
+    pages = [_page((20, 40, "A TEST BOOK"), (200, 400, "prose")) for _ in range(6)]
+    assert "A TEST BOOK" in running_text(pages)
+
+
+def test_the_body_is_never_furniture_however_much_it_repeats():
+    pages = [_page((20, 40, "A TEST BOOK"), (200, 400, "identical prose")) for _ in range(6)]
+    assert "identical prose" not in running_text(pages)
+
+
+def test_a_header_with_a_changing_page_number_is_still_one_header():
+    pages = [_page((20, 40, f"A TEST BOOK {n}"), (200, 400, "prose")) for n in range(6)]
+    assert "A TEST BOOK #" in running_text(pages)
+
+
+def test_a_chapter_heading_is_never_furniture():
+    # Blurring the numbers makes "CHAPTER 1" and "CHAPTER 2" the same string,
+    # so without the guard a book whose headings sit high on the page loses
+    # every one of them.
+    pages = [_page((20, 60, f"CHAPTER {n}"), (200, 400, "prose")) for n in range(1, 7)]
+    assert running_text(pages) == set()
+
+
+def test_two_occurrences_are_not_yet_a_pattern():
+    pages = [_page((20, 40, "Once or twice"), (200, 400, "prose")) for _ in range(2)]
+    assert running_text(pages) == set()
+
+
+def test_a_bare_page_number_is_recognised():
+    for text in ["7", "iv", "[12]", "(3)", "Page 9"]:
+        assert PAGE_NUMBER.match(text), text
+
+
+def test_real_words_are_not_mistaken_for_page_numbers():
+    for text in ["It was", "Chapter 4. The Counterpane", "1984 was a year"]:
+        assert not PAGE_NUMBER.match(text), text
 
 
 # Runs under pytest, and under plain `python test_convert.py` for anyone who

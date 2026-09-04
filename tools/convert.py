@@ -454,52 +454,125 @@ def from_html(path: Path) -> dict:
 # PDF
 # --------------------------------------------------------------------------
 
+# A running header or footer sits in the top or bottom twelfth of the page.
+PDF_MARGIN = 0.12
+# Page numbers on their own, arabic or roman, in any common decoration.
+PAGE_NUMBER = re.compile(r"^[\[\(]?\s*(?:page\s+)?[0-9ivxlcdm]{1,7}\s*[\]\)]?$", re.I)
+
+
+def _digits_blurred(text: str) -> str:
+    """The same header with a different page number counts as the same header."""
+    return re.sub(r"\d+", "#", text).strip()
+
+
+def _in_margin(y0: float, y1: float, height: float) -> bool:
+    """True only when the whole block sits in the top or bottom margin.
+
+    It has to be the whole block. Testing where a block *starts* calls the
+    first paragraph on the page a header, because it begins just below one -
+    which threw away the entire body of the first PDF this met.
+    """
+    return y1 <= height * PDF_MARGIN or y0 >= height * (1 - PDF_MARGIN)
+
+
+def running_text(pages: list[tuple[float, list[tuple[float, float, str]]]]) -> set[str]:
+    """Find the headers and footers, by looking for what repeats.
+
+    A PDF has no idea what a header is - the running title and the page number
+    are just more text on the page, and left alone they land in the middle of
+    the prose: "CHAPTER 1 A TEST BOOK 1 It was a bright cold day".
+
+    Repetition is what gives them away. A chapter heading also sits at the top
+    of a page, but it appears once; "A TEST BOOK" appears on every page. So
+    only margin text that recurs is dropped, and a real heading survives.
+    """
+    counts: dict[str, int] = {}
+    for height, blocks in pages:
+        seen = set()
+        for y0, y1, text in blocks:
+            if _in_margin(y0, y1, height):
+                # A chapter heading is never furniture, however often it
+                # recurs. Blurring the numbers makes "CHAPTER 1" and
+                # "CHAPTER 2" the same string, so without this a book whose
+                # headings sit high on the page loses every one of them.
+                if CHAPTER_HEADING.match(text):
+                    continue
+                key = _digits_blurred(text)
+                if key and key not in seen:
+                    seen.add(key)
+                    counts[key] = counts.get(key, 0) + 1
+    # Three occurrences, or a fifth of the book - whichever is more. Two is not
+    # yet a pattern, and a short book must not have its headings mistaken.
+    threshold = max(3, len(pages) // 5)
+    return {key for key, count in counts.items() if count >= threshold}
+
+
+def _page_blocks(page) -> list[tuple[float, float, str]]:
+    """Text blocks with their vertical position, ordered down the page."""
+    blocks = []
+    for x0, y0, x1, y1, text, *_ in page.get_text("blocks"):
+        text = " ".join(text.split())
+        if text:
+            blocks.append((y0, y1, text))
+    blocks.sort(key=lambda block: block[0])
+    return blocks
+
+
 def from_pdf(path: Path) -> dict:
     try:
-        import fitz  # PyMuPDF
+        import pymupdf
     except ImportError:
-        raise ConversionError("PDF conversion needs PyMuPDF.\n    pip install pymupdf")
+        try:
+            import fitz as pymupdf          # PyMuPDF before it was renamed
+        except ImportError:
+            raise ConversionError(
+                "PDF conversion needs PyMuPDF.\n    pip install pymupdf"
+            ) from None
 
-    doc = fitz.open(path)
+    doc = pymupdf.open(path)
     metadata = doc.metadata or {}
     title = metadata.get("title") or path.stem
     author = metadata.get("author") or None
+
+    # Read every page first, so the headers can be found before anything is
+    # kept - they can only be recognised by comparing pages to each other.
+    pages = [(doc[n].rect.height, _page_blocks(doc[n])) for n in range(doc.page_count)]
+    furniture = running_text(pages)
 
     # A PDF's own outline gives real chapter breaks when it has one. Plenty of
     # PDFs have none, and then the book is one long chapter - which still reads
     # fine, because position is a character offset, not a page.
     starts = {page: name for name, page in
               [(entry[1], entry[2]) for entry in doc.get_toc() if entry[2] > 0]}
+    doc.close()
 
     chapters: list[dict] = []
     blocks: list[dict] = []
     chapter_title: str | None = None
 
-    for number in range(doc.page_count):
+    for number, (height, page_blocks) in enumerate(pages):
         if (number + 1) in starts:
             if blocks:
                 chapters.append({"title": chapter_title, "blocks": blocks})
                 blocks = []
             chapter_title = starts[number + 1]
-        for para in _pdf_paragraphs(doc[number].get_text("text")):
-            blocks.append({"t": P, "s": para})
+
+        for y0, y1, text in page_blocks:
+            if _in_margin(y0, y1, height):
+                if _digits_blurred(text) in furniture or PAGE_NUMBER.match(text):
+                    continue
+            blocks.append({"t": P, "s": _mend_wrapping(text)})
 
     if blocks:
         chapters.append({"title": chapter_title, "blocks": blocks})
-    doc.close()
     return _book(title, author, "pdf", chapters)
 
 
-def _pdf_paragraphs(text: str) -> list[str]:
-    """Rebuild paragraphs from PDF text, which arrives as hard-wrapped lines."""
+def _mend_wrapping(text: str) -> str:
+    """Undo the line breaks a PDF hard-wrapped its paragraphs at."""
     # A hyphen at a line end is almost always a word split across the wrap.
-    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
-    out = []
-    for chunk in re.split(r"\n\s*\n", text):
-        joined = " ".join(chunk.split())
-        if joined:
-            out.append(joined)
-    return out
+    text = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", text)
+    return " ".join(text.split())
 
 
 # --------------------------------------------------------------------------
