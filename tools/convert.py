@@ -628,9 +628,12 @@ def _pdf_cover(pymupdf, doc) -> bytes | None:
                 return pixmap.tobytes(encoding)
             except (ValueError, RuntimeError):
                 continue
-    except Exception:                                   # noqa: BLE001
-        # A cover is decoration. Never let one stop a book converting.
+    except Exception as error:                          # noqa: BLE001
+        # A cover is decoration. Never let one stop a book converting - but
+        # say so, because a silently missing cover looks like a broken tool.
+        print(f"  no cover: {type(error).__name__}: {error}")
         return None
+    print("  no cover: the page would not encode as an image")
     return None
 
 
@@ -771,8 +774,12 @@ def _book(title, author, source: str, chapters: list[dict],
     }
     # Before the chapters on purpose: the phone finds it by reading the front
     # of the file rather than parsing a novel to show a thumbnail.
-    if cover and len(cover) <= COVER_MAX_BYTES:
-        book["cover"] = base64.b64encode(cover).decode("ascii")
+    if cover:
+        if len(cover) <= COVER_MAX_BYTES:
+            book["cover"] = base64.b64encode(cover).decode("ascii")
+        else:
+            print(f"  cover skipped: {len(cover) // 1024} KB, over the "
+                  f"{COVER_MAX_BYTES // 1024} KB limit")
     book["chapters"] = cap_chapters(strip_gutenberg([c for c in chapters if c["blocks"]]))
     return book
 
@@ -822,9 +829,10 @@ def convert(path: Path, out_dir: Path) -> Path:
     )
 
     chars = sum(len(b["s"]) for c in book["chapters"] for b in c["blocks"])
+    cover = "with cover" if book.get("cover") else "no cover"
     print(
         f"{destination.name}  -  {len(book['chapters'])} chapters, "
-        f"{chars:,} characters, {destination.stat().st_size / 1024:.0f} KB"
+        f"{chars:,} characters, {destination.stat().st_size / 1024:.0f} KB, {cover}"
     )
     return destination
 

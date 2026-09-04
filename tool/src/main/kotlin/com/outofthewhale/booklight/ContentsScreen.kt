@@ -1,6 +1,7 @@
 package com.outofthewhale.booklight
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,14 +27,26 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.lightClickable
 
 /**
- * The contents, reached by tapping the middle of a page.
+ * What the reader asked for on the way out of the contents.
  *
- * Returns the chapter to jump to, or nothing at all if the reader backs out.
+ * Two different destinations, so a chapter number alone cannot carry the
+ * answer: [Library] means leave the book altogether.
+ */
+sealed interface ContentsChoice {
+    data class Chapter(val index: Int) : ContentsChoice
+    data object Library : ContentsChoice
+}
+
+/**
+ * The contents, reached from the book and chapter at the top of a page.
+ *
+ * BACK returns to the page being read, LIBRARY leaves the book behind. The
+ * back gesture does the same as BACK, delivering no result at all.
  */
 class ContentsScreen(
     sealedActivity: SealedLightActivity,
     private val entries: List<ContentsEntry>,
-) : SimpleLightScreen<Int>(sealedActivity) {
+) : SimpleLightScreen<ContentsChoice>(sealedActivity) {
 
     @Composable
     override fun Content() {
@@ -46,23 +59,37 @@ class ContentsScreen(
                     .background(LightThemeTokens.colors.background)
                     .padding(horizontal = 32.dp, vertical = 28.dp)
             ) {
-                // Backing out has to be visible. The phone's own back gesture
-                // works too, but nothing on screen said so.
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     modifier = Modifier
-                        .lightClickable { goBack() }
-                        .padding(vertical = 4.dp)
-                        .padding(bottom = 16.dp),
+                        .fillMaxWidth()
+                        .padding(bottom = 20.dp),
                 ) {
-                    LightIcon(icon = LightIcons.BACK)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .lightClickable { goBack() }
+                            .padding(vertical = 4.dp),
+                    ) {
+                        LightIcon(icon = LightIcons.BACK)
+                        LightText(
+                            text = "BACK",
+                            variant = LightTextVariant.Detail,
+                            lighten = true,
+                            modifier = Modifier.padding(start = 12.dp),
+                        )
+                    }
                     LightText(
-                        text = "CONTENTS",
+                        text = "LIBRARY",
                         variant = LightTextVariant.Detail,
                         lighten = true,
-                        modifier = Modifier.padding(start = 12.dp),
+                        modifier = Modifier
+                            .lightClickable { goBack(ContentsChoice.Library) }
+                            .padding(vertical = 4.dp, horizontal = 4.dp),
                     )
                 }
+
                 LazyColumn {
                     items(entries, key = { it.chapter }) { entry ->
                         LightText(
@@ -73,7 +100,9 @@ class ContentsScreen(
                             lighten = entry.title == null,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .lightClickable { goBack(entry.chapter) }
+                                .lightClickable {
+                                    goBack(ContentsChoice.Chapter(entry.chapter))
+                                }
                                 .padding(vertical = 12.dp),
                         )
                     }

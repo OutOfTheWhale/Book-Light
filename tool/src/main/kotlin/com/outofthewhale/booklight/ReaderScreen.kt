@@ -307,10 +307,15 @@ class ReaderScreen(
     }
 
     private fun openContents(book: Book) {
-        // The callback runs only when a chapter was actually chosen - backing
-        // out of the contents delivers no result at all.
-        navigateTo({ sealed -> ContentsScreen(sealed, book.contents()) }) { chosen ->
-            viewModel.jumpTo(chosen)
+        // The callback runs only when something was actually chosen - BACK and
+        // the back gesture deliver no result at all, which leaves the page
+        // exactly where it was.
+        navigateTo({ sealed -> ContentsScreen(sealed, book.contents()) }) { choice ->
+            when (choice) {
+                is ContentsChoice.Chapter -> viewModel.jumpTo(choice.index)
+                // Popping the reader too, now that the contents are gone.
+                ContentsChoice.Library -> goBack()
+            }
         }
     }
 
