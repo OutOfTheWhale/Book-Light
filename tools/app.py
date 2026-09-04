@@ -111,11 +111,17 @@ class App(ttk.Frame):
         # Go
         actions = ttk.Frame(self)
         actions.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-        actions.columnconfigure(1, weight=1)
+        actions.columnconfigure(2, weight=1)
         self.convert_button = ttk.Button(actions, text="Convert", command=self.start)
         self.convert_button.grid(row=0, column=0)
+        # For books already converted: no reason to do the work twice just to
+        # get one onto the phone.
+        self.send_button = ttk.Button(
+            actions, text="Send .book files…", command=self.send_existing
+        )
+        self.send_button.grid(row=0, column=1, padx=(8, 0))
         self.progress = ttk.Progressbar(actions, mode="determinate")
-        self.progress.grid(row=0, column=1, sticky="ew", padx=(12, 0))
+        self.progress.grid(row=0, column=2, sticky="ew", padx=(12, 0))
 
         # What happened
         log_frame = ttk.LabelFrame(self, text="Result", padding=8)
@@ -173,6 +179,45 @@ class App(ttk.Frame):
         if chosen:
             self.out_dir.set(chosen)
 
+    def send_existing(self) -> None:
+        """Put already-converted books on the phone, without converting again."""
+        if self.working:
+            return
+        chosen = filedialog.askopenfilenames(
+            title="Send to the phone",
+            initialdir=self.out_dir.get() or str(DEFAULT_OUT),
+            filetypes=[("Book Light books", "*.book"), ("All files", "*.*")],
+        )
+        if not chosen:
+            return
+
+        self.working = True
+        self._buttons(False)
+        self.progress.configure(maximum=1, value=0)
+        self._clear_log()
+        threading.Thread(
+            target=self._send_only,
+            args=([Path(name) for name in chosen],),
+            daemon=True,
+        ).start()
+
+    def _send_only(self, files: list[Path]) -> None:
+        try:
+            push(files)
+            for path in files:
+                self.messages.put(("ok", f"{path.name}  →  the phone"))
+        except PushError as error:
+            self.messages.put(("bad", str(error)))
+        except Exception as error:                          # noqa: BLE001
+            self.messages.put(("bad", f"Could not send to the phone.\n{error}"))
+        self.messages.put(("step", ""))
+        self.messages.put(("sent", ""))
+
+    def _buttons(self, enabled: bool) -> None:
+        state = "!disabled" if enabled else "disabled"
+        self.convert_button.state([state])
+        self.send_button.state([state])
+
     # -- converting --------------------------------------------------------
 
     def start(self) -> None:
@@ -191,7 +236,7 @@ class App(ttk.Frame):
 
         self._save_settings()
         self.working = True
-        self.convert_button.state(["disabled"])
+        self._buttons(False)
         self.progress.configure(maximum=len(self.files), value=0)
         self._clear_log()
 
@@ -237,8 +282,11 @@ class App(ttk.Frame):
                     self.progress.step(1)
                 elif kind == "done":
                     self.working = False
-                    self.convert_button.state(["!disabled"])
+                    self._buttons(True)
                     self._say(f"Finished. Files are in {text}", "dim")
+                elif kind == "sent":
+                    self.working = False
+                    self._buttons(True)
                 else:
                     self._say(text, "bad" if kind == "bad" else "")
         except queue.Empty:

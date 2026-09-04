@@ -35,6 +35,19 @@ class BookStore(private val booksDir: File) {
     }
 
     /**
+     * Delete a book.
+     *
+     * The reading position is dropped separately, by the library - a mark left
+     * behind would silently resume a book put back later at a place its reader
+     * never left off.
+     */
+    fun delete(id: String): Boolean {
+        val file = File(booksDir, id)
+        if (!file.isFile || file.parentFile != booksDir) return false
+        return runCatching { file.delete() }.getOrDefault(false)
+    }
+
+    /**
      * Read a book's name without parsing it.
      *
      * Listing the library must not cost a full parse - a novel is a megabyte or

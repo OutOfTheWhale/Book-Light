@@ -1,6 +1,7 @@
 package com.outofthewhale.booklight
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.thelightphone.sdk.InitialScreen
@@ -80,6 +82,16 @@ class LibraryViewModel(
         loaded.value = true
     }
 
+    fun remove(bookId: String) {
+        viewModelScope.launch {
+            bookStore.delete(bookId)
+            // The mark goes with it, so sending the book across again starts
+            // it fresh rather than somewhere its reader never left off.
+            progressStore.update { it.without(bookId) }
+            refresh()
+        }
+    }
+
     private fun takeInInbox() {
         val share = fileShare ?: return
         val names = runCatching { share.list(INBOX) }.getOrDefault(emptyList())
@@ -144,7 +156,11 @@ class LibraryScreen(sealedActivity: SealedLightActivity) :
                 } else {
                     LazyColumn {
                         items(books, key = { it.entry.id }) { shelved ->
-                            Row(shelved) { open(shelved.entry.id) }
+                            Row(
+                                shelved = shelved,
+                                onClick = { open(shelved.entry.id) },
+                                onLongPress = { confirmRemove(shelved.entry) },
+                            )
                         }
                     }
                 }
@@ -153,11 +169,18 @@ class LibraryScreen(sealedActivity: SealedLightActivity) :
     }
 
     @Composable
-    private fun Row(shelved: Shelved, onClick: () -> Unit) {
+    private fun Row(shelved: Shelved, onClick: () -> Unit, onLongPress: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .lightClickable(onClick = onClick)
+                // Not lightClickable: that has no long press, and holding a
+                // book is how you remove it.
+                .pointerInput(shelved.entry.id) {
+                    detectTapGestures(
+                        onTap = { onClick() },
+                        onLongPress = { onLongPress() },
+                    )
+                }
                 .padding(vertical = 14.dp)
         ) {
             LightText(text = shelved.entry.title, variant = LightTextVariant.Copy)
@@ -173,6 +196,13 @@ class LibraryScreen(sealedActivity: SealedLightActivity) :
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
+        }
+    }
+
+    private fun confirmRemove(entry: BookEntry) {
+        // The callback runs only on a yes; backing out delivers nothing.
+        navigateTo({ sealed -> ConfirmRemoveScreen(sealed, entry.title) }) { confirmed ->
+            if (confirmed) viewModel.remove(entry.id)
         }
     }
 

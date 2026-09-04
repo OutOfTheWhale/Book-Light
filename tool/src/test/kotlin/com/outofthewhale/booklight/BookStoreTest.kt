@@ -1,8 +1,12 @@
 package com.outofthewhale.booklight
 
+import java.io.File
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class BookStoreTest {
 
@@ -62,5 +66,51 @@ class BookStoreTest {
     @Test
     fun `an empty head reads as absent rather than throwing`() {
         assertNull(read(""))
+    }
+
+    // -- removing ---------------------------------------------------------
+
+    private fun shelf(): Pair<File, BookStore> {
+        val dir = Files.createTempDirectory("booklight").toFile()
+        dir.deleteOnExit()
+        return dir to BookStore(dir)
+    }
+
+    @Test
+    fun `a book is removed from the shelf`() {
+        val (dir, store) = shelf()
+        val book = File(dir, "A Book.book").apply { writeText("""{"title":"A Book"}""") }
+
+        assertTrue(store.delete("A Book.book"))
+        assertFalse(book.exists())
+        assertEquals(emptyList(), store.list())
+    }
+
+    @Test
+    fun `removing a book that is not there is false, not a crash`() {
+        val (_, store) = shelf()
+        assertFalse(store.delete("Never Existed.book"))
+    }
+
+    @Test
+    fun `a name that climbs out of the books folder is refused`() {
+        // The id comes from a file name, but nothing downstream should have to
+        // trust that - deleting is the one operation here with no undo.
+        val (dir, store) = shelf()
+        val outside = File(dir.parentFile, "keep-me.book").apply { writeText("x") }
+        outside.deleteOnExit()
+
+        assertFalse(store.delete("../" + outside.name))
+        assertTrue(outside.exists())
+    }
+
+    @Test
+    fun `removing one book leaves the others alone`() {
+        val (dir, store) = shelf()
+        File(dir, "One.book").writeText("""{"title":"One"}""")
+        File(dir, "Two.book").writeText("""{"title":"Two"}""")
+
+        store.delete("One.book")
+        assertEquals(listOf("Two"), store.list().map { it.title })
     }
 }
