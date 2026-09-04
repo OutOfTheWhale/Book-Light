@@ -1,10 +1,12 @@
 [tool]
-id = "com.thelightphone.app"
-label = "Light SDK Tool"
+id = "com.outofthewhale.booklight"
+label = "Book Light"
 versionCode = 1
-versionName = "1.0.0"
-permissions = ["android.permission.INTERNET"]
+versionName = "0.1.0"
+# INTERNET and CAMERA are both for the transfer route: the tool scans a QR of the
+# desktop's LAN address and pulls converted books down over Wi-Fi. Reading itself
+# needs no network at all.
+permissions = ["android.permission.INTERNET", "android.permission.CAMERA"]
 capabilities = []
-# change if you run this on an LP3!
-# serverPackage = "com.lightos"
+# Switch to "com.lightos" to run on real Light Phone III hardware.
 serverPackage = "com.thelightphone.sdk.emulator"

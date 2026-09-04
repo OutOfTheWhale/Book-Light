@@ -59,6 +59,8 @@ kotlin {
 
 dependencies {
     implementation(project(":sdk:client"))
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.kotlin.test)
     ksp(libs.androidx.room.compiler)
 }
