@@ -122,10 +122,26 @@ whatever the page turns out to be, including on a different phone.
 
 ## Light Phone 2
 
-Not built yet. The plan is a second, ordinary Android app that shares this
-project's core and draws its own screens for the smaller e-ink display.
-Everything below the screen layer — the book format, pagination, saved progress
-— is already free of the SDK and ready to be shared.
+A second, ordinary Android app that shares this project's core and draws its
+own screens. Everything below the screen layer - the book format, the chapter
+flattening, the pagination and the saved reading position - is the same code
+the LP3 tool runs, copied across at build time by a `Sync` task rather than
+duplicated in the repository.
+
+```bash
+./gradlew -p lp2 :app:assembleDebug
+```
+
+Sending a book to it needs no `run-as`: an ordinary app may write its own
+external directory, so `push.py` does a plain `adb push` once it sees the LP2
+package installed.
+
+**Text size is a setting here, not a constant.** The panel reports 480x600 at
+160dpi, but is physically around 270 PPI, so every size draws at roughly two
+fifths of its nominal height. Rather than pick one number for a screen whose
+reported density lies, SETTINGS cycles the whole type scale from 100% to 200%
+and remembers it. It starts at 150%; 175% gives about the same line length as
+the Light Phone III.
 
 ## Licence
 
