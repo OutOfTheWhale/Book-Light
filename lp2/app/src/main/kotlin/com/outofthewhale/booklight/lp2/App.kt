@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import com.outofthewhale.booklight.Book
 import com.outofthewhale.booklight.BookEntry
 import com.outofthewhale.booklight.BookStore
@@ -69,6 +71,20 @@ private const val UNRESOLVED = -1
 /** The end of a chapter whose length is not known yet. */
 private const val LAST_PAGE = Int.MAX_VALUE
 
+/**
+ * Clears the ghosting an e-ink panel leaves behind.
+ *
+ * There is nothing on this device an app can ask for a full refresh - no e-ink
+ * system property, and nothing in /sys/class/graphics/fb0 but the standard
+ * display-processor nodes. So the refresh is provoked: every pixel is driven
+ * to black and then to white, which is what the controller does during a full
+ * update anyway, and the residue of the previous page goes with it.
+ *
+ * Both halves have to be held long enough for the panel to physically settle.
+ * A single frame would be over before the ink moved.
+ */
+private const val FLASH_PHASE_MS = 160L
+
 /** How much room the page turners take at the foot of the page. */
 private val CHEVRON_BAND = 34.dp
 
@@ -92,6 +108,10 @@ fun BookLightApp(bookStore: BookStore, progressStore: ProgressStore) {
 
     // Bumped whenever the shelf changes underneath, to re-read it.
     var revision by remember { mutableIntStateOf(0) }
+
+    // Page turns since the last full refresh, and the request to perform one.
+    var turnsSinceFlash by remember { mutableIntStateOf(0) }
+    var flashTrigger by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(route, revision) {
         if (route !is Route.Library) return@LaunchedEffect
@@ -135,6 +155,7 @@ fun BookLightApp(bookStore: BookStore, progressStore: ProgressStore) {
         book = bookStore.load(id)
     }
 
+    EInkFlash(flashTrigger) {
     when (val here = route) {
         is Route.Library -> LibraryView(
             shelf = shelf,
@@ -161,6 +182,14 @@ fun BookLightApp(bookStore: BookStore, progressStore: ProgressStore) {
                     onChapter = { chapterIndex = it },
                     onPage = { page = it },
                     onContents = { route = Route.Contents },
+                    onTurned = {
+                        val every = ThemeController.refreshEvery
+                        turnsSinceFlash += 1
+                        if (every > 0 && turnsSinceFlash >= every) {
+                            turnsSinceFlash = 0
+                            flashTrigger += 1
+                        }
+                    },
                     onSave = { position ->
                         openId?.let { progressStore.save(it, position, System.currentTimeMillis()) }
                     },
@@ -195,6 +224,7 @@ fun BookLightApp(bookStore: BookStore, progressStore: ProgressStore) {
             },
             onKeep = { route = Route.Library },
         )
+    }
     }
 }
 
@@ -293,6 +323,7 @@ private fun ReaderView(
     onChapter: (Int) -> Unit,
     onPage: (Int) -> Unit,
     onContents: () -> Unit,
+    onTurned: () -> Unit,
     onSave: suspend (Position) -> Unit,
 ) {
     val palette = LocalPalette.current
@@ -372,28 +403,40 @@ private fun ReaderView(
 
             val turn: (Int) -> Unit = { direction ->
                 val next = current + direction
-                when {
-                    next in 0 until pages.count -> onPage(next)
+                val moved = when {
+                    next in 0 until pages.count -> { onPage(next); true }
                     next < 0 && chapterIndex > 0 -> {
                         onChapter(chapterIndex - 1)
                         onPage(LAST_PAGE)
+                        true
                     }
                     next >= pages.count && chapterIndex < lastChapter -> {
                         onChapter(chapterIndex + 1)
                         onPage(0)
+                        true
                     }
+                    // Both ends of the book: nothing moved, so nothing to clear.
+                    else -> false
                 }
+                if (moved) onTurned()
             }
+
+            // The gesture detector is started once and kept. Keying it on the
+            // page instead would rebuild it on every turn, and keying it on
+            // anything that does not change per page - as it first did - leaves
+            // it holding the turn from the page before, so forward moves to the
+            // page already showing and reading stops dead after one tap.
+            val latestTurn by rememberUpdatedState(turn)
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(pages, chapterIndex) {
+                    .pointerInput(Unit) {
                         detectTapGestures { offset ->
                             // The page does nothing but turn. The contents live
                             // behind the header, so a tap while reading can
                             // never land somewhere unexpected.
-                            if (offset.x < size.width / 3f) turn(-1) else turn(1)
+                            if (offset.x < size.width / 3f) latestTurn(-1) else latestTurn(1)
                         }
                     },
             ) {
@@ -477,9 +520,11 @@ private fun Chevrons(
 @Composable
 private fun Chevron(colour: Color, pointsLeft: Boolean, onClick: () -> Unit) {
     Canvas(
+        // clickable rather than a raw gesture detector: it follows the current
+        // lambda, where a remembered detector would keep the first one.
         modifier = Modifier
             .size(30.dp)
-            .pointerInput(Unit) { detectTapGestures { onClick() } },
+            .clickable(onClick = onClick),
     ) {
         val tipX = if (pointsLeft) size.width * 0.38f else size.width * 0.62f
         val backX = if (pointsLeft) size.width * 0.60f else size.width * 0.40f
@@ -609,6 +654,26 @@ private fun SettingsView(onBack: () -> Unit) {
                 .padding(vertical = 4.dp),
         )
 
+        BasicText(
+            text = "SCREEN REFRESH",
+            style = type.fine.copy(color = palette.contentSecondary),
+            modifier = Modifier.padding(top = 16.dp, bottom = 2.dp),
+        )
+        BasicText(
+            text = ThemeController.refreshEvery.let { every ->
+                if (every == 0) "Off" else "Every $every pages"
+            },
+            style = type.subheading.copy(color = palette.content),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { ThemeController.cycleRefresh() }
+                .padding(vertical = 4.dp),
+        )
+        BasicText(
+            text = "Clears what the last page left behind.",
+            style = type.fine.copy(color = palette.contentSecondary),
+        )
+
         Box(modifier = Modifier.height(24.dp))
         BasicText(
             text = "BACK",
@@ -658,6 +723,41 @@ private fun RemoveView(title: String, onRemove: () -> Unit, onKeep: () -> Unit) 
                 .clickable(onClick = onKeep)
                 .padding(vertical = 10.dp),
         )
+    }
+}
+
+/**
+ * Wraps the app, painting over it when [trigger] changes.
+ *
+ * Counting turns and deciding when to flash is the caller's business; this
+ * only performs one when asked. Trigger 0 is the initial composition and must
+ * not flash, or every launch would start with a black screen.
+ */
+@Composable
+private fun EInkFlash(trigger: Int, content: @Composable () -> Unit) {
+    var phase by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(trigger) {
+        if (trigger == 0) return@LaunchedEffect
+        phase = 1
+        delay(FLASH_PHASE_MS)
+        phase = 2
+        delay(FLASH_PHASE_MS)
+        phase = 0
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        content()
+        if (phase != 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (phase == 1) Color.Black else Color.White)
+                    // Swallow taps for the third of a second this lasts, so a
+                    // turn during the flash cannot land on the page beneath.
+                    .pointerInput(Unit) { detectTapGestures { } }
+            )
+        }
     }
 }
 

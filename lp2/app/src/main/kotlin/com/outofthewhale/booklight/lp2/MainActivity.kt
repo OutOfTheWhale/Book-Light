@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.lifecycleScope
 import com.outofthewhale.booklight.BookStore
@@ -20,6 +21,7 @@ private val Context.dataStore by preferencesDataStore(name = "booklight")
 
 private val DARK = booleanPreferencesKey("ui.dark")
 private val TEXT_SCALE = floatPreferencesKey("ui.textScale")
+private val REFRESH = intPreferencesKey("ui.refreshEvery")
 
 /**
  * The Light Phone 2 build.
@@ -48,11 +50,13 @@ class MainActivity : ComponentActivity() {
         ThemeController.restore(
             dark = saved[DARK] ?: true,
             scale = saved[TEXT_SCALE] ?: DEFAULT_TEXT_SCALE,
-        ) { dark, scale ->
+            refresh = saved[REFRESH] ?: DEFAULT_REFRESH_EVERY,
+        ) { dark, scale, refresh ->
             lifecycleScope.launch {
                 dataStore.edit {
                     it[DARK] = dark
                     it[TEXT_SCALE] = scale
+                    it[REFRESH] = refresh
                 }
             }
         }

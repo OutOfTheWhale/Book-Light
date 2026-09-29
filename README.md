@@ -143,6 +143,14 @@ reported density lies, SETTINGS cycles the whole type scale from 100% to 200%
 and remembers it. It starts at 150%; 175% gives about the same line length as
 the Light Phone III.
 
+**The screen refreshes itself every few pages.** E-ink keeps a ghost of what it
+showed before, and this panel exposes no refresh control an app can reach -
+there is no e-ink system property, and nothing in `/sys/class/graphics/fb0` but
+the standard display-processor nodes. So a refresh is provoked: the whole
+screen is driven to black and then to white, which is what the controller does
+during a full update anyway, and the residue goes with it. SETTINGS cycles the
+interval between off, 3, 5 and 10 pages, starting at 5.
+
 ## Licence
 
 MIT, as the SDK it is built on.
