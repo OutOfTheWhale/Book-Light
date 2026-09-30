@@ -81,9 +81,11 @@ private const val LAST_PAGE = Int.MAX_VALUE
  * update anyway, and the residue of the previous page goes with it.
  *
  * Both halves have to be held long enough for the panel to physically settle.
- * A single frame would be over before the ink moved.
+ * A full update on e-ink runs to several hundred milliseconds, so a frame or
+ * two is not enough: if black has not finished drawing before white is asked
+ * for, the two cancel and nothing visible happens at all.
  */
-private const val FLASH_PHASE_MS = 160L
+private const val FLASH_PHASE_MS = 260L
 
 /** How much room the page turners take at the foot of the page. */
 private val CHEVRON_BAND = 34.dp
@@ -109,9 +111,37 @@ fun BookLightApp(bookStore: BookStore, progressStore: ProgressStore) {
     // Bumped whenever the shelf changes underneath, to re-read it.
     var revision by remember { mutableIntStateOf(0) }
 
-    // Page turns since the last full refresh, and the request to perform one.
-    var turnsSinceFlash by remember { mutableIntStateOf(0) }
     var flashTrigger by remember { mutableIntStateOf(0) }
+    var lastDrawn by remember { mutableStateOf<String?>(null) }
+
+    // Everything that alters what is on the panel, in one string. A full
+    // refresh is not a tidy-up on this hardware - it is how a new screen gets
+    // shown at all - so any change to this has to provoke one.
+    val drawn = buildString {
+        append(
+            when (route) {
+                // Page and chapter matter while reading; elsewhere the route
+                // alone says what is on screen.
+                is Route.Reading -> "reading|$chapterIndex|$page"
+                else -> route.toString()
+            }
+        )
+        append('|').append(ThemeController.textScale)
+        append('|').append(ThemeController.isDark)
+        append('|').append(ThemeController.flashOnChange)
+        append('|').append(revision)
+    }
+
+    LaunchedEffect(drawn) {
+        val previous = lastDrawn
+        lastDrawn = drawn
+        // Not on the very first frame, and not on the half-drawn moment
+        // between opening a book and its saved page being worked out.
+        val settling = route is Route.Reading && page == UNRESOLVED
+        if (previous != null && !settling && ThemeController.flashOnChange) {
+            flashTrigger += 1
+        }
+    }
 
     LaunchedEffect(route, revision) {
         if (route !is Route.Library) return@LaunchedEffect
@@ -182,14 +212,6 @@ fun BookLightApp(bookStore: BookStore, progressStore: ProgressStore) {
                     onChapter = { chapterIndex = it },
                     onPage = { page = it },
                     onContents = { route = Route.Contents },
-                    onTurned = {
-                        val every = ThemeController.refreshEvery
-                        turnsSinceFlash += 1
-                        if (every > 0 && turnsSinceFlash >= every) {
-                            turnsSinceFlash = 0
-                            flashTrigger += 1
-                        }
-                    },
                     onSave = { position ->
                         openId?.let { progressStore.save(it, position, System.currentTimeMillis()) }
                     },
@@ -323,7 +345,6 @@ private fun ReaderView(
     onChapter: (Int) -> Unit,
     onPage: (Int) -> Unit,
     onContents: () -> Unit,
-    onTurned: () -> Unit,
     onSave: suspend (Position) -> Unit,
 ) {
     val palette = LocalPalette.current
@@ -403,22 +424,17 @@ private fun ReaderView(
 
             val turn: (Int) -> Unit = { direction ->
                 val next = current + direction
-                val moved = when {
-                    next in 0 until pages.count -> { onPage(next); true }
+                when {
+                    next in 0 until pages.count -> onPage(next)
                     next < 0 && chapterIndex > 0 -> {
                         onChapter(chapterIndex - 1)
                         onPage(LAST_PAGE)
-                        true
                     }
                     next >= pages.count && chapterIndex < lastChapter -> {
                         onChapter(chapterIndex + 1)
                         onPage(0)
-                        true
                     }
-                    // Both ends of the book: nothing moved, so nothing to clear.
-                    else -> false
                 }
-                if (moved) onTurned()
             }
 
             // The gesture detector is started once and kept. Keying it on the
@@ -660,17 +676,15 @@ private fun SettingsView(onBack: () -> Unit) {
             modifier = Modifier.padding(top = 16.dp, bottom = 2.dp),
         )
         BasicText(
-            text = ThemeController.refreshEvery.let { every ->
-                if (every == 0) "Off" else "Every $every pages"
-            },
+            text = if (ThemeController.flashOnChange) "On" else "Off",
             style = type.subheading.copy(color = palette.content),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { ThemeController.cycleRefresh() }
+                .clickable { ThemeController.toggleFlash() }
                 .padding(vertical = 4.dp),
         )
         BasicText(
-            text = "Clears what the last page left behind.",
+            text = "Flashes on every change, which is what makes the new screen appear.",
             style = type.fine.copy(color = palette.contentSecondary),
         )
 

@@ -97,12 +97,12 @@ object ThemeController {
     var textScale by mutableStateOf(DEFAULT_TEXT_SCALE)
         private set
 
-    /** Page turns between full-screen refreshes. 0 turns it off. */
-    var refreshEvery by mutableStateOf(DEFAULT_REFRESH_EVERY)
+    /** Whether to drive the panel through a full refresh on every change. */
+    var flashOnChange by mutableStateOf(true)
         private set
 
     /** Where to write a change; set once, at startup. */
-    private var persist: ((Boolean, Float, Int) -> Unit)? = null
+    private var persist: ((Boolean, Float, Boolean) -> Unit)? = null
 
     val isDark: Boolean get() = palette == Palette.Dark
 
@@ -110,16 +110,16 @@ object ThemeController {
     fun restore(
         dark: Boolean,
         scale: Float,
-        refresh: Int,
-        persist: (Boolean, Float, Int) -> Unit,
+        flash: Boolean,
+        persist: (Boolean, Float, Boolean) -> Unit,
     ) {
         palette = if (dark) Palette.Dark else Palette.Light
         textScale = scale.coerceIn(TEXT_SCALES.first(), TEXT_SCALES.last())
-        refreshEvery = if (refresh in REFRESH_INTERVALS) refresh else DEFAULT_REFRESH_EVERY
+        flashOnChange = flash
         this.persist = persist
     }
 
-    private fun save() = persist?.invoke(isDark, textScale, refreshEvery)
+    private fun save() = persist?.invoke(isDark, textScale, flashOnChange)
 
     fun toggle() {
         palette = if (isDark) Palette.Light else Palette.Dark
@@ -132,26 +132,19 @@ object ThemeController {
         save()
     }
 
-    /** Steps to the next refresh interval, wrapping back to off. */
-    fun cycleRefresh() {
-        val at = REFRESH_INTERVALS.indexOf(refreshEvery)
-        refreshEvery = REFRESH_INTERVALS[(at + 1).mod(REFRESH_INTERVALS.size)]
+    fun toggleFlash() {
+        flashOnChange = !flashOnChange
         save()
     }
 }
 
-/**
- * How many page turns between full refreshes, 0 being never.
- *
- * This panel has no refresh control an app can reach - there is no e-ink
- * system property and nothing in /sys/class/graphics/fb0 but the standard
- * display-processor nodes - so a refresh has to be provoked by painting the
- * whole screen black and then white. That is visible and takes about a third
- * of a second, which is why it happens every few turns rather than every one.
+/*
+ * On this panel a full refresh is not a tidy-up, it is how anything new gets
+ * shown at all: opening a book or the settings left the previous screen in
+ * place until the display was driven through black and white. So it happens on
+ * every change rather than every few pages, and the setting is only there for
+ * someone whose hardware does not need it.
  */
-val REFRESH_INTERVALS = listOf(0, 3, 5, 10)
-
-const val DEFAULT_REFRESH_EVERY = 5
 
 val TEXT_SCALES = listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
 
